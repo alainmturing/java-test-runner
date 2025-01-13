@@ -4,6 +4,7 @@ import shutil
 import subprocess
 from pathlib import Path
 from datetime import datetime
+import csv
 
 # Color codes for terminal output
 class Colors:
@@ -20,14 +21,96 @@ RESULTS_DIR = "test_results"
 SRC_MAIN = "src/main/java"
 SRC_TEST = "src/test/java"
 BUILD_GRADLE_FILE = "build.gradle"
+COVERAGE_FILE = os.path.join(RESULTS_DIR, "coverage.txt")
 
 class TestResult:
     def __init__(self, file_name):
         self.file_name = file_name
-        self.status = "NOT_RUN"  # NOT_RUN, PASSED, FAILED, FAILED_TO_RUN
+        self.status = "NOT_RUN"
         self.output = ""
         self.error = None
         self.timestamp = datetime.now()
+        self.coverage = None
+
+class CoverageMetrics:
+    def __init__(self):
+        self.instruction_coverage = 0
+        self.branch_coverage = 0
+        self.line_coverage = 0
+        self.complexity_coverage = 0
+        self.method_coverage = 0
+        self.class_coverage = 0
+        
+        # Track raw numbers for calculating overall coverage
+        self.total_lines = 0
+        self.covered_lines = 0
+        self.total_instructions = 0
+        self.covered_instructions = 0
+        self.total_branches = 0
+        self.covered_branches = 0
+
+def parse_jacoco_csv():
+    coverage_file = "build/reports/jacoco/test/jacocoTestReport.csv"
+    if not os.path.exists(coverage_file):
+        return None
+
+    metrics = CoverageMetrics()
+    
+    with open(coverage_file, 'r') as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            if row['CLASS'].endswith('Main'):  # Only process the main class
+                # Calculate raw numbers
+                covered_instructions = int(row['INSTRUCTION_COVERED'])
+                missed_instructions = int(row['INSTRUCTION_MISSED'])
+                metrics.total_instructions = covered_instructions + missed_instructions
+                metrics.covered_instructions = covered_instructions
+                
+                covered_branches = int(row['BRANCH_COVERED'])
+                missed_branches = int(row['BRANCH_MISSED'])
+                metrics.total_branches = covered_branches + missed_branches
+                metrics.covered_branches = covered_branches
+                
+                covered_lines = int(row['LINE_COVERED'])
+                missed_lines = int(row['LINE_MISSED'])
+                metrics.total_lines = covered_lines + missed_lines
+                metrics.covered_lines = covered_lines
+
+                # Calculate percentages
+                if metrics.total_instructions > 0:
+                    metrics.instruction_coverage = (covered_instructions / metrics.total_instructions) * 100
+                if metrics.total_branches > 0:
+                    metrics.branch_coverage = (covered_branches / metrics.total_branches) * 100
+                if metrics.total_lines > 0:
+                    metrics.line_coverage = (covered_lines / metrics.total_lines) * 100
+
+    return metrics
+
+def calculate_overall_coverage(test_results):
+    total_lines = 0
+    covered_lines = 0
+    total_instructions = 0
+    covered_instructions = 0
+    total_branches = 0
+    covered_branches = 0
+    
+    for result in test_results:
+        if result.coverage and result.status == "PASSED":
+            total_lines += result.coverage.total_lines
+            covered_lines += result.coverage.covered_lines
+            total_instructions += result.coverage.total_instructions
+            covered_instructions += result.coverage.covered_instructions
+            total_branches += result.coverage.total_branches
+            covered_branches += result.coverage.covered_branches
+    
+    metrics = {
+        'overall_coverage': (covered_lines / total_lines * 100) if total_lines > 0 else 0,
+        'instruction_coverage': (covered_instructions / total_instructions * 100) if total_instructions > 0 else 0,
+        'branch_coverage': (covered_branches / total_branches * 100) if total_branches > 0 else 0,
+        'line_coverage': (covered_lines / total_lines * 100) if total_lines > 0 else 0
+    }
+    
+    return metrics
 
 def cleanup():
     print(f"{Colors.BLUE}Cleaning up build and src directories...{Colors.NC}")
@@ -87,6 +170,21 @@ def setup_test_environment(code_file, test_files):
         test_file_path = os.path.join(SRC_TEST, test_file_name)
         shutil.copy2(test_file, test_file_path)
 
+def save_coverage_report(test_results):
+    with open(COVERAGE_FILE, 'w') as f:
+        f.write("Code Coverage Report\n")
+        f.write("===================\n\n")
+        f.write(f"Generated: {datetime.now()}\n\n")
+        
+        # Add overall coverage section
+        overall_metrics = calculate_overall_coverage(test_results)
+        f.write("Overall Coverage Metrics:\n")
+        f.write("------------------------\n")
+        f.write(f"Overall Coverage: {overall_metrics['overall_coverage']:.2f}%\n")
+        f.write(f"Total Instruction Coverage: {overall_metrics['instruction_coverage']:.2f}%\n")
+        f.write(f"Total Branch Coverage: {overall_metrics['branch_coverage']:.2f}%\n")
+        f.write(f"Total Line Coverage: {overall_metrics['line_coverage']:.2f}%\n\n")
+        
 def run_tests():
     code_files = find_java_files(CODE_DIR)
     test_files = find_java_files(TEST_DIR)
@@ -107,26 +205,22 @@ def run_tests():
         
         test_result = TestResult(code_file)
         
-        # Clean previous build
         cleanup()
         
         try:
-            # Set up the test environment
             setup_test_environment(code_file, test_files)
-            
-            # Create Gradle build script
             create_build_gradle()
             
-            # Run Gradle commands and capture output
             gradle_result = run_gradle(capture_output=True)
             test_result.output = gradle_result.stdout + gradle_result.stderr
             
-            # Check if there were compilation errors
             if 'compileJava FAILED' in test_result.output or 'error:' in test_result.output:
                 test_result.status = "FAILED_TO_RUN"
                 test_result.error = "Compilation failed"
             elif gradle_result.returncode == 0:
                 test_result.status = "PASSED"
+                # Parse coverage metrics after successful test run
+                test_result.coverage = parse_jacoco_csv()
                 print(f"{Colors.GREEN}Successfully tested {code_file}{Colors.NC}")
             else:
                 test_result.status = "FAILED"
@@ -138,11 +232,8 @@ def run_tests():
             test_result.error = str(e)
             print(f"{Colors.YELLOW}Failed to run tests for {code_file}: {e}{Colors.NC}")
         
-        # Save test result
         save_test_result(test_result)
         test_results.append(test_result)
-        
-        # Cleanup after each test
         cleanup()
     
     return test_results
@@ -232,8 +323,7 @@ def save_summary(test_results):
         f.write(f"Total tests: {c_total}\n")
         f.write(f"Passed: {c_passed}\n")
         f.write(f"Failed/Failed to Run: {c_failed}\n")
-        f.write(f"Pass percentage: {c_pass_pct:.2f}%\n")
-        f.write(f"Fail percentage: {c_fail_pct:.2f}%\n\n")
+        f.write(f"Pass Rate: {c_pass_pct:.2f}%\n")
         
         # Llama model statistics (F-J)
         l_total, l_passed, l_failed, l_pass_pct, l_fail_pct = calculate_stats(llama_tests)
@@ -242,8 +332,7 @@ def save_summary(test_results):
         f.write(f"Total tests: {l_total}\n")
         f.write(f"Passed: {l_passed}\n")
         f.write(f"Failed/Failed to Run: {l_failed}\n")
-        f.write(f"Pass percentage: {l_pass_pct:.2f}%\n")
-        f.write(f"Fail percentage: {l_fail_pct:.2f}%\n\n")
+        f.write(f"Pass Rate: {l_pass_pct:.2f}%\n")
         
         f.write("Detailed Results:\n")
         f.write("----------------\n")
@@ -308,7 +397,6 @@ def run_gradle(capture_output=True):
 def main():
     print(f"{Colors.GREEN}Starting Java code testing...{Colors.NC}")
     
-    # Ensure the required directories exist
     if not os.path.exists(CODE_DIR):
         print(f"{Colors.RED}Code directory '{CODE_DIR}' not found{Colors.NC}")
         return
@@ -317,17 +405,13 @@ def main():
         print(f"{Colors.RED}Test directory '{TEST_DIR}' not found{Colors.NC}")
         return
 
-    # Create results directory if it doesn't exist
     os.makedirs(RESULTS_DIR, exist_ok=True)
 
-    # Run the tests and get results
     test_results = run_tests()
-
-    # Generate summary
     save_summary(test_results)
+    save_coverage_report(test_results)
 
-    # Final cleanup
-    print(f"{Colors.GREEN}All tests completed. Results saved in {RESULTS_DIR} directory.{Colors.NC}")
+    print(f"{Colors.GREEN}All tests completed. Results and coverage report saved in {RESULTS_DIR} directory.{Colors.NC}")
     cleanup()
 
 if __name__ == "__main__":

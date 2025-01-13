@@ -4,13 +4,16 @@
 The test runner requires a specific directory structure:
 ```
 .
-├── code/           # Directory containing Java files to test
-│   ├── A.java     # Single-letter solution files (A-J)
-│   ├── base.java  # Other solution files
-│   └── ...
-├── test/          # Directory containing test files
-│   └── MainTest.java
-└── test_results/  # Generated automatically
+├── code/ # Directory containing Java files to test
+│ ├── A.java # Single-letter solution files (A-J)
+│ ├── base.java # Other solution files
+│ └── ...
+├── test/ # Directory containing test files
+│ └── MainTest.java
+└── test_results/ # Generated automatically
+    ├── summary.txt # Overall test results
+    ├── coverage.txt # Code coverage report
+    └── ... # Individual test results
 ```
 
 ## Test File Requirements
@@ -39,10 +42,8 @@ mkdir test
 
 ## Managing Dependencies
 To add custom dependencies for your Java code:
-
 1. Locate the `create_build_gradle()` function in the script (around line 250)
 2. Add new dependencies in the `dependencies` block. For example:
-
 ```python
 def create_build_gradle():
     gradle_content = """plugins {
@@ -61,7 +62,7 @@ dependencies {
     implementation 'com.fasterxml.jackson.core:jackson-databind:2.15.2'
     implementation 'org.json:json:20230227'
     implementation 'org.jsoup:jsoup:1.18.3'
-
+    
     // Add your custom dependencies here, for example:
     implementation 'org.apache.commons:commons-lang3:3.12.0'
     implementation 'com.google.guava:guava:31.1-jre'
@@ -98,6 +99,19 @@ The script will:
    - Overall test statistics
    - Specific statistics for letter-based files (A-E for Claude, F-J for Llama)
    - Detailed results for each file
+4. Generate a `coverage.txt` containing:
+   - Code coverage metrics for each tested file
+   - Instruction coverage percentage
+   - Branch coverage percentage
+   - Line coverage percentage
+
+## Coverage Report
+The coverage report (`coverage.txt`) provides detailed metrics about test coverage:
+- **Instruction Coverage**: Percentage of Java bytecode instructions that were executed
+- **Branch Coverage**: Percentage of code branches (if/else statements, switches) that were executed
+- **Line Coverage**: Percentage of code lines that were executed
+
+Coverage data is collected using JaCoCo and is generated automatically for each successfully tested file.
 
 ## Common Issues
 - Ensure your code files contain only one public class
@@ -105,6 +119,7 @@ The script will:
 - Check that Java and Python are properly installed and accessible from the command line
 - Make sure you have write permissions in the directory
 - If adding new dependencies, verify they are compatible with your JDK version
+- If coverage report is missing, ensure tests ran successfully and JaCoCo plugin is properly configured
 
 ## Default Dependencies
 The script automatically sets up:
