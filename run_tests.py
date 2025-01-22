@@ -123,7 +123,8 @@ def parse_jacoco_csv():
     with open(coverage_file, 'r') as f:
         reader = csv.DictReader(f)
         for row in reader:
-            if row['CLASS'].endswith('Main'):  # Only process the main class
+            # Look for either Main or Solution class
+            if row['CLASS'].endswith('Main') or row['CLASS'].endswith('Solution'):  # Modified this line
                 # Calculate raw numbers
                 covered_instructions = int(row['INSTRUCTION_COVERED'])
                 missed_instructions = int(row['INSTRUCTION_MISSED'])
@@ -147,6 +148,7 @@ def parse_jacoco_csv():
                     metrics.branch_coverage = (covered_branches / metrics.total_branches) * 100
                 if metrics.total_lines > 0:
                     metrics.line_coverage = (covered_lines / metrics.total_lines) * 100
+                break  # Added break since we found our class
 
     return metrics
 
@@ -205,41 +207,44 @@ def find_test_files(task_id):
 def find_code_files(task_id):
     task_code_dir = os.path.join(BASE_DIR, task_id, CODE_DIR)
     return find_java_files(task_code_dir)
-def process_java_file(file_path):
+
+def check_test_convention(test_file):
+    """Check if test file references Solution or Main"""
+    with open(test_file, 'r') as f:
+        content = f.read()
+    return 'Solution' in content
+
+def process_java_file(file_path, use_solution):
     with open(file_path, 'r') as f:
         content = f.read()
     
-    # Match the public class name
-    match = re.search(r'public class ([A-Za-z0-9_]+)', content)
-    if not match:
-        print(f"Could not find public class in {file_path}")
-        return content
-
-    original_class_name = match.group(1)
-    print(f"Renaming class {original_class_name} to Main")
-
-    # Replace all occurrences of the original class name with "Main"
-    updated_content = re.sub(rf'\b{original_class_name}\b', "Main", content)
+    target_class = "Solution" if use_solution else "Main"
     
-    return updated_content
+    # Replace the class declaration and any references
+    content = re.sub(r'public class \w+', f'public class {target_class}', content)
+    
+    return content
+
 
 def setup_test_environment(code_file, test_files):
     # Create necessary directories
     os.makedirs(SRC_MAIN, exist_ok=True)
     os.makedirs(SRC_TEST, exist_ok=True)
 
-    # Process and copy the main code file
-    print(f"\nProcessing main code file: {code_file}")
-    main_content = process_java_file(code_file)
-    main_file_path = os.path.join(SRC_MAIN, "Main.java")
+    # Check test file convention
+    uses_solution = check_test_convention(test_files[0])
+    
+    # Process main code file
+    main_content = process_java_file(code_file, uses_solution)
+    filename = "Solution.java" if uses_solution else "Main.java"
+    main_file_path = os.path.join(SRC_MAIN, filename)
     with open(main_file_path, 'w') as f:
         f.write(main_content)
 
-    # Copy test files without modification
+    # Copy test file
     for test_file in test_files:
-        print(f"\nCopying test file: {test_file}")
-        test_file_name = os.path.basename(test_file)
-        test_file_path = os.path.join(SRC_TEST, test_file_name)
+        test_filename = "SolutionTest.java" if uses_solution else "MainTest.java"
+        test_file_path = os.path.join(SRC_TEST, test_filename)
         shutil.copy2(test_file, test_file_path)
 
 def save_coverage_report(test_results, task_id):
@@ -278,7 +283,7 @@ def save_coverage_report(test_results, task_id):
         
 def run_tests(task_id):
     """
-    Run tests for all code files against MainTest.java
+    Run tests for all code files against test files
     """
     # Get absolute paths for task directories
     script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -321,23 +326,9 @@ def run_tests(task_id):
             # Clean working directory for each test
             cleanup()
             
-            # Setup test environment
-            os.makedirs(SRC_MAIN, exist_ok=True)
-            os.makedirs(SRC_TEST, exist_ok=True)
-            
-            # Process and copy the main code file
-            with open(code_file_path, 'r') as f:
-                main_content = process_java_file(code_file_path)
-            
-            main_file_path = os.path.join(SRC_MAIN, "Main.java")
-            with open(main_file_path, 'w') as f:
-                f.write(main_content)
-            
-            # Copy test files
-            for test_file in test_files:
-                test_file_path = os.path.join(task_test_dir, test_file)
-                test_dest_path = os.path.join(SRC_TEST, test_file)
-                shutil.copy2(test_file_path, test_dest_path)
+            # Use the new setup_test_environment function that handles the naming convention
+            test_file_paths = [os.path.join(task_test_dir, test_file) for test_file in test_files]
+            setup_test_environment(code_file_path, test_file_paths)
             
             create_build_gradle()
             
@@ -513,13 +504,8 @@ repositories {
 }
 
 dependencies {
-    implementation 'com.fasterxml.jackson.core:jackson-databind:2.15.2'
-    implementation 'org.json:json:20230227'
-    implementation 'org.jsoup:jsoup:1.18.3'
-
-    testImplementation 'org.junit.jupiter:junit-jupiter-api:5.9.2'
-    testImplementation 'org.mockito:mockito-junit-jupiter:5.15.2'
-    testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.9.2'
+    testImplementation platform('org.junit:junit-bom:5.10.0')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
 }
 
 test {
