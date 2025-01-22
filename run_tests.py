@@ -5,7 +5,6 @@ import subprocess
 from pathlib import Path
 from datetime import datetime
 import csv
-import platform
 
 # Color codes for terminal output
 class Colors:
@@ -60,7 +59,8 @@ def parse_jacoco_csv():
     with open(coverage_file, 'r') as f:
         reader = csv.DictReader(f)
         for row in reader:
-            if row['CLASS'].endswith('Main'):  # Only process the main class
+            # Look for either Main or Solution class
+            if row['CLASS'].endswith('Main') or row['CLASS'].endswith('Solution'):
                 # Calculate raw numbers
                 covered_instructions = int(row['INSTRUCTION_COVERED'])
                 missed_instructions = int(row['INSTRUCTION_MISSED'])
@@ -84,6 +84,7 @@ def parse_jacoco_csv():
                     metrics.branch_coverage = (covered_branches / metrics.total_branches) * 100
                 if metrics.total_lines > 0:
                     metrics.line_coverage = (covered_lines / metrics.total_lines) * 100
+                break  # Break after finding the first matching class
 
     return metrics
 
@@ -115,32 +116,17 @@ def calculate_overall_coverage(test_results):
 
 def cleanup():
     print(f"{Colors.BLUE}Cleaning up build and src directories...{Colors.NC}")
-    directories = ["build", "src", ".gradle", "gradle", ".ropeproject"]
-    for directory in directories:
-        try:
-            if os.path.exists(directory):
-                shutil.rmtree(directory)
-        except PermissionError:
-            print(f"{Colors.YELLOW}Warning: Permission denied when trying to remove {directory}{Colors.NC}")
-            
-    files = ["gradlew", "gradlew.bat", BUILD_GRADLE_FILE]
-    for file in files:
-        try:
-            if os.path.exists(file):
-                os.remove(file)
-        except PermissionError:
-            print(f"{Colors.YELLOW}Warning: Permission denied when trying to remove {file}{Colors.NC}")
+    for directory in ["build", "src", ".gradle", "gradle", ".ropeproject"]:
+        shutil.rmtree(directory, ignore_errors=True)
+    for file in ["gradlew", "gradlew.bat", BUILD_GRADLE_FILE]:
+        if os.path.exists(file):
+            os.remove(file)
 
 def find_java_files(directory):
     java_files = []
-    try:
-        for file_path in Path(directory).rglob("*.java"):
-            file_str = str(file_path)
-            if "build" not in file_str and ".gradle" not in file_str:
-                # Ensure path is using correct separators for the platform
-                java_files.append(os.path.normpath(file_str))
-    except Exception as e:
-        print(f"{Colors.RED}Error finding Java files in {directory}: {str(e)}{Colors.NC}")
+    for file_path in Path(directory).rglob("*.java"):
+        if "build" not in str(file_path) and ".gradle" not in str(file_path):
+            java_files.append(str(file_path))
     return java_files
 
 def find_test_files():
@@ -149,9 +135,17 @@ def find_test_files():
 def find_code_files():
     return find_java_files(CODE_DIR)
 
-def process_java_file(file_path):
+def check_test_convention(test_file):
+    """Check if test file references Solution or Main"""
+    with open(test_file, 'r') as f:
+        content = f.read()
+    return 'Solution' in content
+
+def process_java_file(file_path, use_solution):
     with open(file_path, 'r') as f:
         content = f.read()
+    
+    target_class = "Solution" if use_solution else "Main"
     
     # Match the public class name
     match = re.search(r'public class ([A-Za-z0-9_]+)', content)
@@ -160,10 +154,10 @@ def process_java_file(file_path):
         return content
 
     original_class_name = match.group(1)
-    print(f"Renaming class {original_class_name} to Main")
+    print(f"Renaming class {original_class_name} to {target_class}")
 
-    # Replace all occurrences of the original class name with "Main"
-    updated_content = re.sub(rf'\b{original_class_name}\b', "Main", content)
+    # Replace all occurrences of the original class name
+    updated_content = re.sub(rf'\b{original_class_name}\b', target_class, content)
     
     return updated_content
 
@@ -172,22 +166,26 @@ def setup_test_environment(code_file, test_files):
     os.makedirs(SRC_MAIN, exist_ok=True)
     os.makedirs(SRC_TEST, exist_ok=True)
 
+    # Check test file convention
+    uses_solution = check_test_convention(test_files[0])
+    target_class = "Solution" if uses_solution else "Main"
+
     # Process and copy the main code file
     print(f"\nProcessing main code file: {code_file}")
-    main_content = process_java_file(code_file)
-    main_file_path = os.path.join(SRC_MAIN, "Main.java")
+    main_content = process_java_file(code_file, uses_solution)
+    main_file_path = os.path.join(SRC_MAIN, f"{target_class}.java")
     with open(main_file_path, 'w') as f:
         f.write(main_content)
 
-    # Copy test files without modification
+    # Copy test files with appropriate name
     for test_file in test_files:
         print(f"\nCopying test file: {test_file}")
-        test_file_name = os.path.basename(test_file)
+        test_file_name = f"{target_class}Test.java"
         test_file_path = os.path.join(SRC_TEST, test_file_name)
         shutil.copy2(test_file, test_file_path)
 
 def save_coverage_report(test_results):
-    with open(COVERAGE_FILE, 'w', encoding='utf-8') as f:
+    with open(COVERAGE_FILE, 'w') as f:
         f.write("Code Coverage Report\n")
         f.write("===================\n\n")
         f.write(f"Generated: {datetime.now()}\n\n")
@@ -262,7 +260,7 @@ def save_test_result(test_result):
     file_name = os.path.basename(test_result.file_name)
     result_file = os.path.join(RESULTS_DIR, f"{file_name.split('.java')[0]}.txt")
     
-    with open(result_file, 'w', encoding='utf-8') as f:
+    with open(result_file, 'w') as f:
         f.write(f"Test Results for {file_name}\n")
         f.write(f"Timestamp: {test_result.timestamp}\n")
         f.write(f"Status: {test_result.status}\n")
@@ -367,7 +365,6 @@ dependencies {
     implementation 'com.fasterxml.jackson.core:jackson-databind:2.15.2'
     implementation 'org.json:json:20230227'
     implementation 'org.jsoup:jsoup:1.18.3'
-    implementation 'com.google.code.gson:gson:2.10.1'
 
     testImplementation 'org.junit.jupiter:junit-jupiter-api:5.9.2'
     testImplementation 'org.mockito:mockito-junit-jupiter:5.15.2'
@@ -398,26 +395,10 @@ jacocoTestReport {
         f.write(gradle_content)
 
 def run_gradle(capture_output=True):
-    is_windows = platform.system() == 'Windows'
-    gradle_wrapper = 'gradlew.bat' if is_windows else './gradlew'
-    
-    # Create wrapper with shell=True for Windows
-    wrapper_cmd = ['gradle', 'wrapper']
-    if is_windows:
-        subprocess.run(wrapper_cmd, check=True, capture_output=capture_output, shell=True)
-    else:
-        subprocess.run(wrapper_cmd, check=True, capture_output=capture_output)
-    
-    # Run tests with shell=True for Windows
-    test_cmd = [gradle_wrapper, 'test', 'jacocoTestReport']
-    result = subprocess.run(
-        test_cmd,
-        capture_output=capture_output,
-        text=True,
-        shell=is_windows
-    )
+    subprocess.run(["gradle", "wrapper"], check=True, capture_output=capture_output)
+    result = subprocess.run(["./gradlew", "test", "jacocoTestReport"], 
+                          capture_output=capture_output, text=True)
     return result
-
 
 def main():
     print(f"{Colors.GREEN}Starting Java code testing...{Colors.NC}")
