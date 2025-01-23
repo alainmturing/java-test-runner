@@ -5,6 +5,7 @@ import subprocess
 from pathlib import Path
 from datetime import datetime
 import csv
+import platform
 
 # Color codes for terminal output
 class Colors:
@@ -158,7 +159,7 @@ def process_java_file(file_path, use_solution):
     # Match the public class name
     match = re.search(r'public class ([A-Za-z0-9_]+)', content)
     if not match:
-        print(f"Could not find public class in {file_path}")
+        print(f"Could not find public class in {file_path} MAKE SURE THE CLASS IS PUBLIC")
         return content
 
     original_class_name = match.group(1)
@@ -403,9 +404,24 @@ jacocoTestReport {
         f.write(gradle_content)
 
 def run_gradle(capture_output=True):
-    subprocess.run(["gradle", "wrapper"], check=True, capture_output=capture_output)
-    result = subprocess.run(["./gradlew", "test", "jacocoTestReport"], 
-                          capture_output=capture_output, text=True)
+    is_windows = platform.system() == 'Windows'
+    gradle_wrapper = 'gradlew.bat' if is_windows else './gradlew'
+    
+    # Create wrapper with shell=True for Windows
+    wrapper_cmd = ['gradle', 'wrapper']
+    if is_windows:
+        subprocess.run(wrapper_cmd, check=True, capture_output=capture_output, shell=True)
+    else:
+        subprocess.run(wrapper_cmd, check=True, capture_output=capture_output)
+    
+    # Run tests with shell=True for Windows
+    test_cmd = [gradle_wrapper, 'test', 'jacocoTestReport']
+    result = subprocess.run(
+        test_cmd,
+        capture_output=capture_output,
+        text=True,
+        shell=is_windows
+    )
     return result
 
 def main():
