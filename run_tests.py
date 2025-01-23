@@ -214,14 +214,29 @@ def check_test_convention(test_file):
         content = f.read()
     return 'Solution' in content
 
+def get_class_name(content):
+    """Extract the original class name from the file content"""
+    match = re.search(r'public class (\w+)', content)
+    return match.group(1) if match else None
+
 def process_java_file(file_path, use_solution):
     with open(file_path, 'r') as f:
         content = f.read()
     
     target_class = "Solution" if use_solution else "Main"
     
-    # Replace the class declaration and any references
-    content = re.sub(r'public class \w+', f'public class {target_class}', content)
+    # Find all unique class names in the file
+    class_pattern = r'(?:class|new|throws|extends|implements|\w+\s+)[\s\n]*(\w+)(?=[\s\n]*[{(\s])'
+    class_names = set(re.findall(class_pattern, content))
+    keywords = {'String', 'Integer', 'Boolean', 'Double', 'Float', 'List', 'Map', 'Set', 'Exception'}
+    class_names = {name for name in class_names if name not in keywords}
+    
+    # Get the main class name
+    main_class = re.search(r'public class (\w+)', content).group(1)
+    
+    # Replace all occurrences of the main class name
+    content = re.sub(f'(?<!new )\\b{main_class}\\b', target_class, content)
+    content = re.sub(f'new {main_class}\\(', f'new {target_class}(', content)
     
     return content
 
@@ -504,8 +519,8 @@ repositories {
 }
 
 dependencies {
-    testImplementation platform('org.junit:junit-bom:5.10.0')
-    testImplementation 'org.junit.jupiter:junit-jupiter'
+    implementation 'org.springframework:spring-core:5.3.20'
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.0'
 }
 
 test {
@@ -526,7 +541,7 @@ jacocoTestReport {
         csv.required = true
         html.required = true
     }
-}
+}                                                                                                                                                                                         
 """
     with open(BUILD_GRADLE_FILE, "w") as f:
         f.write(gradle_content)
