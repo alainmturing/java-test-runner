@@ -55,37 +55,45 @@ def parse_jacoco_csv():
         return None
 
     metrics = CoverageMetrics()
+    total_metrics = {
+        'instructions': {'covered': 0, 'missed': 0},
+        'branches': {'covered': 0, 'missed': 0},
+        'lines': {'covered': 0, 'missed': 0}
+    }
     
     with open(coverage_file, 'r') as f:
         reader = csv.DictReader(f)
         for row in reader:
-            # Look for either Main or Solution class
-            if row['CLASS'].endswith('Main') or row['CLASS'].endswith('Solution'):
-                # Calculate raw numbers
-                covered_instructions = int(row['INSTRUCTION_COVERED'])
-                missed_instructions = int(row['INSTRUCTION_MISSED'])
-                metrics.total_instructions = covered_instructions + missed_instructions
-                metrics.covered_instructions = covered_instructions
-                
-                covered_branches = int(row['BRANCH_COVERED'])
-                missed_branches = int(row['BRANCH_MISSED'])
-                metrics.total_branches = covered_branches + missed_branches
-                metrics.covered_branches = covered_branches
-                
-                covered_lines = int(row['LINE_COVERED'])
-                missed_lines = int(row['LINE_MISSED'])
-                metrics.total_lines = covered_lines + missed_lines
-                metrics.covered_lines = covered_lines
-
-                # Calculate percentages
-                if metrics.total_instructions > 0:
-                    metrics.instruction_coverage = (covered_instructions / metrics.total_instructions) * 100
-                if metrics.total_branches > 0:
-                    metrics.branch_coverage = (covered_branches / metrics.total_branches) * 100
-                if metrics.total_lines > 0:
-                    metrics.line_coverage = (covered_lines / metrics.total_lines) * 100
-                break  # Break after finding the first matching class
-
+            # Include coverage for all classes in the package
+            if not row['CLASS'].startswith('org.junit') and not row['CLASS'].startswith('org.mockito'):
+                # Accumulate coverage data
+                total_metrics['instructions']['covered'] += int(row['INSTRUCTION_COVERED'])
+                total_metrics['instructions']['missed'] += int(row['INSTRUCTION_MISSED'])
+                total_metrics['branches']['covered'] += int(row['BRANCH_COVERED'])
+                total_metrics['branches']['missed'] += int(row['BRANCH_MISSED'])
+                total_metrics['lines']['covered'] += int(row['LINE_COVERED'])
+                total_metrics['lines']['missed'] += int(row['LINE_MISSED'])
+    
+    # Calculate total coverage metrics
+    total_instructions = total_metrics['instructions']['covered'] + total_metrics['instructions']['missed']
+    total_branches = total_metrics['branches']['covered'] + total_metrics['branches']['missed']
+    total_lines = total_metrics['lines']['covered'] + total_metrics['lines']['missed']
+    
+    if total_instructions > 0:
+        metrics.instruction_coverage = (total_metrics['instructions']['covered'] / total_instructions) * 100
+    if total_branches > 0:
+        metrics.branch_coverage = (total_metrics['branches']['covered'] / total_branches) * 100
+    if total_lines > 0:
+        metrics.line_coverage = (total_metrics['lines']['covered'] / total_lines) * 100
+    
+    # Store raw numbers for overall coverage calculation
+    metrics.total_instructions = total_instructions
+    metrics.covered_instructions = total_metrics['instructions']['covered']
+    metrics.total_branches = total_branches
+    metrics.covered_branches = total_metrics['branches']['covered']
+    metrics.total_lines = total_lines
+    metrics.covered_lines = total_metrics['lines']['covered']
+    
     return metrics
 
 def calculate_overall_coverage(test_results):
