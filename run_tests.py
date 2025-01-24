@@ -417,9 +417,10 @@ jacocoTestReport {
 def run_gradle(capture_output=True):
     is_windows = platform.system() == 'Windows'
     gradle_wrapper = 'gradlew.bat' if is_windows else './gradlew'
+    encoding = 'cp1252' if is_windows else 'utf-8'
     
-    wrapper_cmd = ['gradle', 'wrapper']  # Define it here first
-    subprocess.run(wrapper_cmd, check=True, capture_output=capture_output, shell=is_windows, encoding='utf-8')
+    wrapper_cmd = ['gradle', 'wrapper']
+    subprocess.run(wrapper_cmd, check=True, capture_output=capture_output, shell=is_windows, encoding=encoding)
     
     test_cmd = [gradle_wrapper, 'test', 'jacocoTestReport'] 
     result = subprocess.run(
@@ -427,7 +428,7 @@ def run_gradle(capture_output=True):
         capture_output=capture_output,
         text=True,
         shell=is_windows,
-        encoding='utf-8'
+        encoding=encoding
     )
     return result
 
