@@ -146,33 +146,37 @@ def find_code_files():
 
 def check_test_convention(test_file):
     """Check if test file references Solution or Main"""
-    with open(test_file, 'r') as f:
+    with open(test_file, 'r', encoding='utf-8') as f:
         content = f.read()
     return 'Solution' in content
 
 def process_java_file(file_path, use_solution):
-    with open(file_path, 'r') as f:
-        content = f.read()
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            content = f.read()
     
-    target_class = "Solution" if use_solution else "Main"
-    
-    # Find all unique class names in the file
-    class_pattern = r'(?:class|new|throws|extends|implements|\w+\s+)[\s\n]*(\w+)(?=[\s\n]*[{(\s])'
-    class_names = set(re.findall(class_pattern, content))
-    keywords = {'String', 'Integer', 'Boolean', 'Double', 'Float', 'List', 'Map', 'Set', 'Exception'}
-    class_names = {name for name in class_names if name not in keywords}
-    
-    # Change protected/private to public
-    content = re.sub(r'\b(private|protected)\s+static', 'public static', content)
-    content = re.sub(r'\b(private|protected)\s+final\s+static', 'public static final', content)
-    content = re.sub(r'\b(private|protected)\s+', 'public ', content)
-    
-    # Get the main class name and replace it
-    main_class = re.search(r'public class (\w+)', content).group(1)
-    content = re.sub(f'(?<!new )\\b{main_class}\\b', target_class, content)
-    content = re.sub(f'new {main_class}\\(', f'new {target_class}(', content)
-    
-    return content
+        target_class = "Solution" if use_solution else "Main"
+        
+        # Find all unique class names in the file
+        class_pattern = r'(?:class|new|throws|extends|implements|\w+\s+)[\s\n]*(\w+)(?=[\s\n]*[{(\s])'
+        class_names = set(re.findall(class_pattern, content))
+        keywords = {'String', 'Integer', 'Boolean', 'Double', 'Float', 'List', 'Map', 'Set', 'Exception'}
+        class_names = {name for name in class_names if name not in keywords}
+        
+        # Change protected/private to public
+        content = re.sub(r'\b(private|protected)\s+static', 'public static', content)
+        content = re.sub(r'\b(private|protected)\s+final\s+static', 'public static final', content)
+        content = re.sub(r'\b(private|protected)\s+', 'public ', content)
+        
+        # Get the main class name and replace it
+        main_class = re.search(r'public class (\w+)', content).group(1)
+        content = re.sub(f'(?<!new )\\b{main_class}\\b', target_class, content)
+        content = re.sub(f'new {main_class}\\(', f'new {target_class}(', content)
+        
+        return content
+    except Exception as e:
+        print(f"Error reading {file_path}: {e}")
+        raise
 
 def setup_test_environment(code_file, test_files):
     # Create necessary directories
@@ -187,7 +191,7 @@ def setup_test_environment(code_file, test_files):
     print(f"\nProcessing main code file: {code_file}")
     main_content = process_java_file(code_file, uses_solution)
     main_file_path = os.path.join(SRC_MAIN, f"{target_class}.java")
-    with open(main_file_path, 'w') as f:
+    with open(main_file_path, 'w', encoding='utf-8') as f:
         f.write(main_content)
 
     # Copy test files with appropriate name
@@ -272,16 +276,19 @@ def save_test_result(test_result):
     # Save individual test result
     file_name = os.path.basename(test_result.file_name)
     result_file = os.path.join(RESULTS_DIR, f"{file_name.split('.java')[0]}.txt")
-    
-    with open(result_file, 'w') as f:
-        f.write(f"Test Results for {file_name}\n")
-        f.write(f"Timestamp: {test_result.timestamp}\n")
-        f.write(f"Status: {test_result.status}\n")
-        f.write("\nTest Output:\n")
-        f.write(test_result.output)
-        if test_result.error:
-            f.write("\nErrors:\n")
-            f.write(str(test_result.error))
+    try:
+        with open(result_file, 'w', encoding='utf-8') as f:
+            f.write(f"Test Results for {file_name}\n")
+            f.write(f"Timestamp: {test_result.timestamp}\n")
+            f.write(f"Status: {test_result.status}\n")
+            f.write("\nTest Output:\n")
+            f.write(test_result.output)
+            if test_result.error:
+                f.write("\nErrors:\n")
+                f.write(str(test_result.error))
+    except Exception as e:
+        print(f"Error writing test result: {e}")
+        raise
 
 def save_summary(test_results):
     summary_file = os.path.join(RESULTS_DIR, "summary.txt")
@@ -404,7 +411,7 @@ jacocoTestReport {
     }
 }
 """
-    with open(BUILD_GRADLE_FILE, "w") as f:
+    with open(BUILD_GRADLE_FILE, "w", encoding='utf-8') as f:
         f.write(gradle_content)
 
 def run_gradle(capture_output=True):
