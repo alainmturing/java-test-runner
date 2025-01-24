@@ -411,20 +411,16 @@ def run_gradle(capture_output=True):
     is_windows = platform.system() == 'Windows'
     gradle_wrapper = 'gradlew.bat' if is_windows else './gradlew'
     
-    # Create wrapper with shell=True for Windows
-    wrapper_cmd = ['gradle', 'wrapper']
-    if is_windows:
-        subprocess.run(wrapper_cmd, check=True, capture_output=capture_output, shell=True)
-    else:
-        subprocess.run(wrapper_cmd, check=True, capture_output=capture_output)
+    wrapper_cmd = ['gradle', 'wrapper']  # Define it here first
+    subprocess.run(wrapper_cmd, check=True, capture_output=capture_output, shell=is_windows, encoding='utf-8')
     
-    # Run tests with shell=True for Windows
-    test_cmd = [gradle_wrapper, 'test', 'jacocoTestReport']
+    test_cmd = [gradle_wrapper, 'test', 'jacocoTestReport'] 
     result = subprocess.run(
         test_cmd,
         capture_output=capture_output,
         text=True,
-        shell=is_windows
+        shell=is_windows,
+        encoding='utf-8'
     )
     return result
 
