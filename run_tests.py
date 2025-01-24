@@ -155,19 +155,23 @@ def process_java_file(file_path, use_solution):
     
     target_class = "Solution" if use_solution else "Main"
     
-    # Match the public class name
-    match = re.search(r'public class ([A-Za-z0-9_]+)', content)
-    if not match:
-        print(f"Could not find public class in {file_path}")
-        return content
-
-    original_class_name = match.group(1)
-    print(f"Renaming class {original_class_name} to {target_class}")
-
-    # Replace all occurrences of the original class name
-    updated_content = re.sub(rf'\b{original_class_name}\b', target_class, content)
+    # Find all unique class names in the file
+    class_pattern = r'(?:class|new|throws|extends|implements|\w+\s+)[\s\n]*(\w+)(?=[\s\n]*[{(\s])'
+    class_names = set(re.findall(class_pattern, content))
+    keywords = {'String', 'Integer', 'Boolean', 'Double', 'Float', 'List', 'Map', 'Set', 'Exception'}
+    class_names = {name for name in class_names if name not in keywords}
     
-    return updated_content
+    # Change protected/private to public
+    content = re.sub(r'\b(private|protected)\s+static', 'public static', content)
+    content = re.sub(r'\b(private|protected)\s+final\s+static', 'public static final', content)
+    content = re.sub(r'\b(private|protected)\s+', 'public ', content)
+    
+    # Get the main class name and replace it
+    main_class = re.search(r'public class (\w+)', content).group(1)
+    content = re.sub(f'(?<!new )\\b{main_class}\\b', target_class, content)
+    content = re.sub(f'new {main_class}\\(', f'new {target_class}(', content)
+    
+    return content
 
 def setup_test_environment(code_file, test_files):
     # Create necessary directories
