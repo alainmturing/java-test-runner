@@ -231,10 +231,13 @@ def process_java_file(file_path, use_solution):
     keywords = {'String', 'Integer', 'Boolean', 'Double', 'Float', 'List', 'Map', 'Set', 'Exception'}
     class_names = {name for name in class_names if name not in keywords}
     
-    # Get the main class name
-    main_class = re.search(r'public class (\w+)', content).group(1)
+    # Change protected/private to public
+    content = re.sub(r'\b(private|protected)\s+static', 'public static', content)
+    content = re.sub(r'\b(private|protected)\s+final\s+static', 'public static final', content)
+    content = re.sub(r'\b(private|protected)\s+', 'public ', content)
     
-    # Replace all occurrences of the main class name
+    # Get the main class name and replace it
+    main_class = re.search(r'public class (\w+)', content).group(1)
     content = re.sub(f'(?<!new )\\b{main_class}\\b', target_class, content)
     content = re.sub(f'new {main_class}\\(', f'new {target_class}(', content)
     
@@ -519,13 +522,16 @@ repositories {
 }
 
 dependencies {
-    implementation 'org.springframework:spring-core:5.3.20'
-    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.0'
+    implementation 'org.nd4j:nd4j-native-platform:1.0.0-M2.1'
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.3'
+    testImplementation 'org.mockito:mockito-junit-jupiter:5.14.2'
 }
 
 test {
     useJUnitPlatform()
     finalizedBy jacocoTestReport
+
+    jvmArgs = ['--add-opens=java.base/java.lang=ALL-UNNAMED']
 
     testLogging {
         events 'passed', 'skipped', 'failed'
@@ -541,16 +547,22 @@ jacocoTestReport {
         csv.required = true
         html.required = true
     }
-}                                                                                                                                                                                         
+}                                                                                                                                                                                
 """
     with open(BUILD_GRADLE_FILE, "w") as f:
         f.write(gradle_content)
 
 def run_gradle(capture_output=True):
     subprocess.run(["gradle", "wrapper"], check=True, capture_output=capture_output)
-    result = subprocess.run(["./gradlew", "test", "jacocoTestReport"], 
-                          capture_output=capture_output, text=True)
-    return result
+    try:
+        result = subprocess.run(["./gradlew", "test", "jacocoTestReport"], 
+                              capture_output=capture_output, 
+                              text=True,
+                              timeout=30)  # 30 second timeout
+        return result
+    except subprocess.TimeoutExpired:
+        print(f"{Colors.YELLOW}Test execution timed out after 30 seconds{Colors.NC}")
+        return subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="Test timed out")
 
 def main():
     # Declare global at the start of the function
