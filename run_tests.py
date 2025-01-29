@@ -16,7 +16,7 @@ class Colors:
     NC = '\033[0m'  # No color
 
 # Directory structure constants
-BASE_DIR = "calibrated_tasks/java_tasks"
+BASE_DIR = "calibrated_tasks/java_tasks"  # This will be overridden by command line argument
 CODE_DIR = "code"
 TEST_DIR = "test"
 RESULTS_DIR = "test_results"
@@ -98,7 +98,10 @@ def setup_task_directory(task_id):
     # First handle the test file specifically
     test_file_path = os.path.join(task_dir, "test.java")
     if os.path.exists(test_file_path):
-        dest_test_path = os.path.join(task_test_dir, "MainTest.java")
+        # Check if test uses Solution or Main
+        use_solution = check_test_convention(test_file_path)
+        test_filename = "SolutionTest.java" if use_solution else "MainTest.java"
+        dest_test_path = os.path.join(task_test_dir, test_filename)
         shutil.copy2(test_file_path, dest_test_path)
         print(f"{Colors.BLUE}Copied test.java to {dest_test_path}{Colors.NC}")
 
@@ -522,16 +525,13 @@ repositories {
 }
 
 dependencies {
-    implementation 'org.nd4j:nd4j-native-platform:1.0.0-M2.1'
-    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.3'
-    testImplementation 'org.mockito:mockito-junit-jupiter:5.14.2'
+    implementation 'org.thymeleaf:thymeleaf:3.1.1.RELEASE'
+    implementation 'org.junit.jupiter:junit-jupiter-engine:5.9.2'
 }
 
 test {
     useJUnitPlatform()
     finalizedBy jacocoTestReport
-
-    jvmArgs = ['--add-opens=java.base/java.lang=ALL-UNNAMED']
 
     testLogging {
         events 'passed', 'skipped', 'failed'
@@ -547,7 +547,7 @@ jacocoTestReport {
         csv.required = true
         html.required = true
     }
-}                                                                                                                                                                                
+}                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       
 """
     with open(BUILD_GRADLE_FILE, "w") as f:
         f.write(gradle_content)
@@ -566,11 +566,12 @@ def run_gradle(capture_output=True):
 
 def main():
     # Declare global at the start of the function
-    global RESULTS_DIR
+    global RESULTS_DIR, BASE_DIR
     
-    if len(sys.argv) != 2:
-        print(f"{Colors.RED}Usage: python {sys.argv[0]} <task_id>{Colors.NC}")
+    if len(sys.argv) not in [2, 3]:
+        print(f"{Colors.RED}Usage: python {sys.argv[0]} <task_id> [base_path]{Colors.NC}")
         print("Example: python run_tests.py 304027")
+        print("Example with base path: python run_tests.py 304027 /path/to/tasks")
         return
 
     task_id = sys.argv[1]
@@ -578,10 +579,15 @@ def main():
         print(f"{Colors.RED}Invalid task ID format. Must be a 6-digit number.{Colors.NC}")
         return
 
+    # Override BASE_DIR if path is provided
+    if len(sys.argv) == 3:
+        BASE_DIR = sys.argv[2]
+        print(f"{Colors.BLUE}Using custom base directory: {BASE_DIR}{Colors.NC}")
+
     print(f"{Colors.GREEN}Starting Java code testing for task {task_id}...{Colors.NC}")
 
-    # Set task-specific results directory - MODIFIED THIS LINE
-    RESULTS_DIR = "test_results"  # Instead of os.path.join(BASE_DIR, task_id, RESULTS_DIR)
+    # Set task-specific results directory
+    RESULTS_DIR = "test_results"
 
     # Set up the task directory structure
     if not setup_task_directory(task_id):
