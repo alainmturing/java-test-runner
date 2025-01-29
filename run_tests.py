@@ -12,11 +12,10 @@ class Colors:
     GREEN = '\033[0;32m'
     RED = '\033[0;31m'
     BLUE = '\033[0;34m'
-    YELLOW = '\033[0;33m'  # Added yellow for FAILED_TO_RUN status
-    NC = '\033[0m'  # No color
+    YELLOW = '\033[0;33m'
+    NC = '\033[0m'
 
 # Directory structure constants
-BASE_DIR = "calibrated_tasks/java_tasks"  # This will be overridden by command line argument
 CODE_DIR = "code"
 TEST_DIR = "test"
 RESULTS_DIR = "test_results"
@@ -68,55 +67,142 @@ class CoverageMetrics:
         self.total_branches = 0
         self.covered_branches = 0
 
-def setup_task_directory(task_id):
-    """
-    Set up the code and test directories for the given task ID
-    """
-    # Get absolute path of the script's directory
+def backup_solution_java(src_main_dir):
+    """Backup the original Solution.java file"""
+    solution_path = os.path.join(src_main_dir, "Solution.java")
+    if os.path.exists(solution_path):
+        backup_path = os.path.join(src_main_dir, "Solution.java.backup")
+        shutil.copy2(solution_path, backup_path)
+        return True
+    return False
+
+def restore_solution_java(src_main_dir):
+    """Restore the original Solution.java file from backup"""
+    backup_path = os.path.join(src_main_dir, "Solution.java.backup")
+    solution_path = os.path.join(src_main_dir, "Solution.java")
+    if os.path.exists(backup_path):
+        shutil.copy2(backup_path, solution_path)
+        os.remove(backup_path)
+        return True
+    return False
+
+def get_task_directories(base_path):
+    """Get all task directories that match the 6-digit pattern"""
+    task_dirs = []
+    for item in os.listdir(base_path):
+        if re.match(r'^\d{6}$', item):
+            full_path = os.path.join(base_path, item)
+            if os.path.isdir(full_path):
+                task_dirs.append(item)
+    return sorted(task_dirs)
+
+def cleanup():
+    """Clean up build directories and files"""
+    print(f"{Colors.BLUE}Cleaning up build and src directories...{Colors.NC}")
+    for directory in ["build", "src", ".gradle", "gradle", ".ropeproject"]:
+        shutil.rmtree(directory, ignore_errors=True)
+    for file in ["gradlew", "gradlew.bat", BUILD_GRADLE_FILE]:
+        if os.path.exists(file):
+            os.remove(file)
+
+def delete_work_dir():
+    """Delete work_dir in the same directory as run_tests.py"""
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    
-    # Construct absolute path to task directory
-    task_dir = os.path.join(script_dir, BASE_DIR, task_id)
-    
-    # Debug information
-    print(f"Current working directory: {os.getcwd()}")
-    print(f"Looking for task directory at: {task_dir}")
-    
-    if not os.path.exists(task_dir):
-        print(f"{Colors.RED}Task directory '{task_dir}' not found{Colors.NC}")
-        return False
+    work_dir = os.path.join(script_dir, "work_dir")
+    if os.path.exists(work_dir):
+        shutil.rmtree(work_dir)
 
-    # Create directories under the task directory
-    task_code_dir = os.path.join(task_dir, CODE_DIR)
-    task_test_dir = os.path.join(task_dir, TEST_DIR)
-    task_results_dir = os.path.join(task_dir, RESULTS_DIR)
+def check_test_convention(test_file):
+    """Check if test file references Solution or Main"""
+    with open(test_file, 'r') as f:
+        content = f.read()
+    return 'Solution' in content
+
+def process_java_file(file_path, src_main_dir):
+    """Process a Java file and copy it to src/main/java as Solution.java"""
+    with open(file_path, 'r') as f:
+        content = f.read()
     
-    os.makedirs(task_code_dir, exist_ok=True)
-    os.makedirs(task_test_dir, exist_ok=True)
-    os.makedirs(task_results_dir, exist_ok=True)
+    # Change protected/private to public
+    content = re.sub(r'\b(private|protected)\s+static', 'public static', content)
+    content = re.sub(r'\b(private|protected)\s+final\s+static', 'public static final', content)
+    content = re.sub(r'\b(private|protected)\s+', 'public ', content)
+    
+    # Get the main class name and replace it with Solution
+    main_class = re.search(r'public class (\w+)', content)
+    if main_class:
+        content = re.sub(f'(?<!new )\\b{main_class.group(1)}\\b', 'Solution', content)
+        content = re.sub(f'new {main_class.group(1)}\\(', 'new Solution(', content)
+    
+    # Write the processed content to Solution.java
+    os.makedirs(src_main_dir, exist_ok=True)
+    solution_path = os.path.join(src_main_dir, "Solution.java")
+    with open(solution_path, 'w') as f:
+        f.write(content)
 
-    # First handle the test file specifically
-    test_file_path = os.path.join(task_dir, "test.java")
-    if os.path.exists(test_file_path):
-        # Check if test uses Solution or Main
-        use_solution = check_test_convention(test_file_path)
-        test_filename = "SolutionTest.java" if use_solution else "MainTest.java"
-        dest_test_path = os.path.join(task_test_dir, test_filename)
-        shutil.copy2(test_file_path, dest_test_path)
-        print(f"{Colors.BLUE}Copied test.java to {dest_test_path}{Colors.NC}")
+def create_build_gradle(task_dir):
+    """Create build.gradle file using template if it exists, otherwise use default config"""
+    # Check for task-specific build.gradle template
+    template_path = os.path.join(task_dir, "build.gradle.template")
+    
+    if os.path.exists(template_path):
+        # If template exists, copy it directly
+        with open(template_path, 'r') as src, open(BUILD_GRADLE_FILE, 'w') as dest:
+            dest.write(src.read())
+    else:
+        # Fall back to default configuration
+        default_gradle_content = """plugins {
+    id 'java'
+    id 'jacoco'
+}
 
-    # Then handle all other .java files
-    for file_name in os.listdir(task_dir):
-        if file_name.endswith('.java') and file_name != 'test.java':
-            orig_path = os.path.join(task_dir, file_name)
-            new_name = FILE_MAPPING.get(file_name, file_name)  # Use mapping if exists, otherwise keep original name
-            dest_path = os.path.join(task_code_dir, new_name)
-            shutil.copy2(orig_path, dest_path)
-            print(f"{Colors.BLUE}Copied {file_name} to {dest_path}{Colors.NC}")
+repositories {
+    mavenCentral()
+}
 
-    return True
+dependencies {
+    testImplementation 'org.junit.jupiter:junit-jupiter-api:5.9.2'
+    testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.9.2'
+}
+
+test {
+    useJUnitPlatform()
+    finalizedBy jacocoTestReport
+
+    testLogging {
+        events 'passed', 'skipped', 'failed'
+        showExceptions true
+        showCauses true
+        showStackTraces true
+        exceptionFormat = 'full'
+    }
+}
+
+jacocoTestReport {
+    reports {
+        csv.required = true
+        html.required = true
+    }
+}
+"""
+        with open(BUILD_GRADLE_FILE, "w") as f:
+            f.write(default_gradle_content)
+
+def run_gradle(capture_output=True):
+    """Run Gradle tests with coverage reporting"""
+    subprocess.run(["gradle", "wrapper"], check=True, capture_output=capture_output)
+    try:
+        result = subprocess.run(["./gradlew", "test", "jacocoTestReport"], 
+                              capture_output=capture_output, 
+                              text=True,
+                              timeout=30)  # 30 second timeout
+        return result
+    except subprocess.TimeoutExpired:
+        print(f"{Colors.YELLOW}Test execution timed out after 30 seconds{Colors.NC}")
+        return subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="Test timed out")
 
 def parse_jacoco_csv():
+    """Parse JaCoCo coverage report"""
     coverage_file = "build/reports/jacoco/test/jacocoTestReport.csv"
     if not os.path.exists(coverage_file):
         return None
@@ -126,9 +212,7 @@ def parse_jacoco_csv():
     with open(coverage_file, 'r') as f:
         reader = csv.DictReader(f)
         for row in reader:
-            # Look for either Main or Solution class
-            if row['CLASS'].endswith('Main') or row['CLASS'].endswith('Solution'):  # Modified this line
-                # Calculate raw numbers
+            if row['CLASS'].endswith('Solution'):
                 covered_instructions = int(row['INSTRUCTION_COVERED'])
                 missed_instructions = int(row['INSTRUCTION_MISSED'])
                 metrics.total_instructions = covered_instructions + missed_instructions
@@ -151,128 +235,92 @@ def parse_jacoco_csv():
                     metrics.branch_coverage = (covered_branches / metrics.total_branches) * 100
                 if metrics.total_lines > 0:
                     metrics.line_coverage = (covered_lines / metrics.total_lines) * 100
-                break  # Added break since we found our class
+                break
 
     return metrics
 
-def calculate_overall_coverage(test_results):
-    total_lines = 0
-    covered_lines = 0
-    total_instructions = 0
-    covered_instructions = 0
-    total_branches = 0
-    covered_branches = 0
+def run_single_test(task_dir, source_name):
+    """Run a single test for a given source file"""
+    test_result = TestResult(source_name)
     
-    for result in test_results:
-        if result.coverage and result.status == "PASSED":
-            total_lines += result.coverage.total_lines
-            covered_lines += result.coverage.covered_lines
-            total_instructions += result.coverage.total_instructions
-            covered_instructions += result.coverage.covered_instructions
-            total_branches += result.coverage.total_branches
-            covered_branches += result.coverage.covered_branches
+    try:
+        cleanup()
+        create_build_gradle()
+        
+        # Copy test file to src/test/java
+        src_test_dir = os.path.join(task_dir, SRC_TEST)
+        test_files = [f for f in os.listdir(src_test_dir) if f.endswith('Test.java')]
+        if test_files:
+            os.makedirs("src/test/java", exist_ok=True)
+            for test_file in test_files:
+                shutil.copy2(
+                    os.path.join(src_test_dir, test_file),
+                    os.path.join("src/test/java", test_file)
+                )
+        
+        gradle_result = run_gradle(capture_output=True)
+        test_result.output = gradle_result.stdout + gradle_result.stderr
+        
+        if 'compileJava FAILED' in test_result.output or 'error:' in test_result.output:
+            test_result.status = "FAILED_TO_RUN"
+            test_result.error = "Compilation failed"
+        elif gradle_result.returncode == 0:
+            test_result.status = "PASSED"
+            test_result.coverage = parse_jacoco_csv()
+            print(f"{Colors.GREEN}Successfully tested {source_name}{Colors.NC}")
+        else:
+            test_result.status = "FAILED"
+            test_result.error = f"Tests failed with return code: {gradle_result.returncode}"
+            print(f"{Colors.RED}Tests failed for {source_name}{Colors.NC}")
+            
+    except Exception as e:
+        test_result.status = "FAILED_TO_RUN"
+        test_result.error = str(e)
+        print(f"{Colors.YELLOW}Failed to run tests for {source_name}: {e}{Colors.NC}")
     
-    metrics = {
-        'overall_coverage': (covered_lines / total_lines * 100) if total_lines > 0 else 0,
-        'instruction_coverage': (covered_instructions / total_instructions * 100) if total_instructions > 0 else 0,
-        'branch_coverage': (covered_branches / total_branches * 100) if total_branches > 0 else 0,
-        'line_coverage': (covered_lines / total_lines * 100) if total_lines > 0 else 0
-    }
-    
-    return metrics
+    return test_result
 
-def cleanup():
-    print(f"{Colors.BLUE}Cleaning up build and src directories...{Colors.NC}")
-    for directory in ["build", "src", ".gradle", "gradle", ".ropeproject"]:
-        shutil.rmtree(directory, ignore_errors=True)
-    for file in ["gradlew", "gradlew.bat", BUILD_GRADLE_FILE]:
-        if os.path.exists(file):
-            os.remove(file)
+def process_task(task_id, base_path):
+    """Process a single task directory"""
+    task_dir = os.path.join(base_path, task_id)
+    src_main_dir = os.path.join(task_dir, SRC_MAIN)
+    test_results = []
 
-def delete_work_dir():
-    """Delete work_dir in the same directory as run_tests.py"""
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    work_dir = os.path.join(script_dir, "work_dir")
-    if os.path.exists(work_dir):
-        shutil.rmtree(work_dir)
+    # First test the ideal solution
+    if os.path.exists(os.path.join(src_main_dir, "Solution.java")):
+        # Backup original Solution.java
+        backup_solution_java(src_main_dir)
+        
+        # Test the original solution
+        test_result = run_single_test(task_dir, "ideal_solution")
+        test_results.append(test_result)
 
-def find_java_files(directory):
-    java_files = []
-    for file_path in Path(directory).rglob("*.java"):
-        if "build" not in str(file_path) and ".gradle" not in str(file_path):
-            java_files.append(str(file_path))
-    return java_files
+        # Process base_code.java
+        base_code_path = os.path.join(task_dir, "base_code.java")
+        if os.path.exists(base_code_path):
+            process_java_file(base_code_path, src_main_dir)
+            test_result = run_single_test(task_dir, "base_code")
+            test_results.append(test_result)
 
-def find_test_files(task_id):
-    task_test_dir = os.path.join(BASE_DIR, task_id, TEST_DIR)
-    return find_java_files(task_test_dir)
+        # Process alternate responses
+        alt_responses_dir = os.path.join(task_dir, "alternate_responses")
+        if os.path.exists(alt_responses_dir):
+            for file_name in os.listdir(alt_responses_dir):
+                if file_name.endswith('.java'):
+                    file_path = os.path.join(alt_responses_dir, file_name)
+                    process_java_file(file_path, src_main_dir)
+                    new_name = FILE_MAPPING.get(file_name, file_name)
+                    test_result = run_single_test(task_dir, new_name)
+                    test_results.append(test_result)
+                    
+                    # Restore original Solution.java after each test
+                    restore_solution_java(src_main_dir)
 
-def find_code_files(task_id):
-    task_code_dir = os.path.join(BASE_DIR, task_id, CODE_DIR)
-    return find_java_files(task_code_dir)
+    return test_results
 
-def check_test_convention(test_file):
-    """Check if test file references Solution or Main"""
-    with open(test_file, 'r') as f:
-        content = f.read()
-    return 'Solution' in content
-
-def get_class_name(content):
-    """Extract the original class name from the file content"""
-    match = re.search(r'public class (\w+)', content)
-    return match.group(1) if match else None
-
-def process_java_file(file_path, use_solution):
-    with open(file_path, 'r') as f:
-        content = f.read()
-    
-    target_class = "Solution" if use_solution else "Main"
-    
-    # Find all unique class names in the file
-    class_pattern = r'(?:class|new|throws|extends|implements|\w+\s+)[\s\n]*(\w+)(?=[\s\n]*[{(\s])'
-    class_names = set(re.findall(class_pattern, content))
-    keywords = {'String', 'Integer', 'Boolean', 'Double', 'Float', 'List', 'Map', 'Set', 'Exception'}
-    class_names = {name for name in class_names if name not in keywords}
-    
-    # Change protected/private to public
-    content = re.sub(r'\b(private|protected)\s+static', 'public static', content)
-    content = re.sub(r'\b(private|protected)\s+final\s+static', 'public static final', content)
-    content = re.sub(r'\b(private|protected)\s+', 'public ', content)
-    
-    # Get the main class name and replace it
-    main_class = re.search(r'public class (\w+)', content).group(1)
-    content = re.sub(f'(?<!new )\\b{main_class}\\b', target_class, content)
-    content = re.sub(f'new {main_class}\\(', f'new {target_class}(', content)
-    
-    return content
-
-
-def setup_test_environment(code_file, test_files):
-    # Create necessary directories
-    os.makedirs(SRC_MAIN, exist_ok=True)
-    os.makedirs(SRC_TEST, exist_ok=True)
-
-    # Check test file convention
-    uses_solution = check_test_convention(test_files[0])
-    
-    # Process main code file
-    main_content = process_java_file(code_file, uses_solution)
-    filename = "Solution.java" if uses_solution else "Main.java"
-    main_file_path = os.path.join(SRC_MAIN, filename)
-    with open(main_file_path, 'w') as f:
-        f.write(main_content)
-
-    # Copy test file
-    for test_file in test_files:
-        test_filename = "SolutionTest.java" if uses_solution else "MainTest.java"
-        test_file_path = os.path.join(SRC_TEST, test_filename)
-        shutil.copy2(test_file, test_file_path)
-
-def save_coverage_report(test_results, task_id):
+def save_coverage_report(test_results, task_id, base_path):
     """Save coverage report to a file"""
-    # Get absolute path for results directory
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    task_results_dir = os.path.join(script_dir, BASE_DIR, task_id, RESULTS_DIR)
+    task_results_dir = os.path.join(base_path, task_id, RESULTS_DIR)
     os.makedirs(task_results_dir, exist_ok=True)
     coverage_file = os.path.join(task_results_dir, "coverage.txt")
 
@@ -281,187 +329,27 @@ def save_coverage_report(test_results, task_id):
         f.write("===================\n\n")
         f.write(f"Generated: {datetime.now()}\n\n")
         
-        # Add overall coverage section
-        overall_metrics = calculate_overall_coverage(test_results)
-        f.write("Overall Coverage Metrics:\n")
-        f.write("------------------------\n")
-        f.write(f"Overall Coverage: {overall_metrics['overall_coverage']:.2f}%\n")
-        f.write(f"Total Instruction Coverage: {overall_metrics['instruction_coverage']:.2f}%\n")
-        f.write(f"Total Branch Coverage: {overall_metrics['branch_coverage']:.2f}%\n")
-        f.write(f"Total Line Coverage: {overall_metrics['line_coverage']:.2f}%\n\n")
-
         # Add individual file coverage
         f.write("Individual File Coverage:\n")
         f.write("------------------------\n")
         for result in test_results:
-            f.write(f"\n{os.path.basename(result.file_name)}:\n")
+            f.write(f"\n{result.file_name}:\n")
             if result.status == "PASSED" and result.coverage:
                 f.write(f"  Line Coverage: {result.coverage.line_coverage:.2f}%\n")
                 f.write(f"  Branch Coverage: {result.coverage.branch_coverage:.2f}%\n")
                 f.write(f"  Instruction Coverage: {result.coverage.instruction_coverage:.2f}%\n")
             else:
                 f.write(f"  No coverage data (Status: {result.status})\n")
-        
-def run_tests(task_id):
-    """
-    Run tests for all code files against test files
-    """
-    # Get absolute paths for task directories
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    task_dir = os.path.join(script_dir, BASE_DIR, task_id)
-    task_code_dir = os.path.join(task_dir, CODE_DIR)
-    task_test_dir = os.path.join(task_dir, TEST_DIR)
-    task_results_dir = os.path.join(task_dir, RESULTS_DIR)
-    
-    test_results = []
 
-    # Find all code files in the code directory
-    code_files = [f for f in os.listdir(task_code_dir) if f.endswith('.java')]
-    test_files = [f for f in os.listdir(task_test_dir) if f.endswith('.java')]
-
-    if not code_files:
-        print(f"{Colors.RED}No Java files found in {task_code_dir} directory{Colors.NC}")
-        return test_results
-
-    if not test_files:
-        print(f"{Colors.RED}No test files found in {task_test_dir} directory{Colors.NC}")
-        return test_results
-
-    print(f"{Colors.GREEN}Found {len(code_files)} code files and {len(test_files)} test files{Colors.NC}")
-
-    # Create and move to work directory for testing
-    work_dir = os.path.join(script_dir, "work_dir")
-    if os.path.exists(work_dir):
-        shutil.rmtree(work_dir)
-    os.makedirs(work_dir)
-    original_dir = os.getcwd()
-    os.chdir(work_dir)
-
-    for code_file in code_files:
-        code_file_path = os.path.join(task_code_dir, code_file)
-        print(f"\n{Colors.BLUE}Testing {code_file}{Colors.NC}")
-        
-        test_result = TestResult(code_file)
-        
-        try:
-            # Clean working directory for each test
-            cleanup()
-            
-            # Use the new setup_test_environment function that handles the naming convention
-            test_file_paths = [os.path.join(task_test_dir, test_file) for test_file in test_files]
-            setup_test_environment(code_file_path, test_file_paths)
-            
-            create_build_gradle()
-            
-            gradle_result = run_gradle(capture_output=True)
-            test_result.output = gradle_result.stdout + gradle_result.stderr
-            
-            if 'compileJava FAILED' in test_result.output or 'error:' in test_result.output:
-                test_result.status = "FAILED_TO_RUN"
-                test_result.error = "Compilation failed"
-            elif gradle_result.returncode == 0:
-                test_result.status = "PASSED"
-                test_result.coverage = parse_jacoco_csv()
-                print(f"{Colors.GREEN}Successfully tested {code_file}{Colors.NC}")
-            else:
-                test_result.status = "FAILED"
-                test_result.error = f"Tests failed with return code: {gradle_result.returncode}"
-                print(f"{Colors.RED}Tests failed for {code_file}{Colors.NC}")
-                
-        except Exception as e:
-            test_result.status = "FAILED_TO_RUN"
-            test_result.error = str(e)
-            print(f"{Colors.YELLOW}Failed to run tests for {code_file}: {e}{Colors.NC}")
-        
-        # Save individual test result in task-specific results directory
-        save_test_result(test_result, task_id)
-        test_results.append(test_result)
-        cleanup()
-    
-    # Change back to original directory and clean up work directory
-    os.chdir(original_dir)
-    if os.path.exists(work_dir):
-        shutil.rmtree(work_dir)
-    
-    return test_results
-
-def save_test_result(test_result, task_id):
-    """Save individual test result to a file"""
-    # Get absolute path for results directory
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    task_results_dir = os.path.join(script_dir, BASE_DIR, task_id, RESULTS_DIR)
-    os.makedirs(task_results_dir, exist_ok=True)
-    
-    # Save individual test result
-    file_name = os.path.basename(test_result.file_name)
-    result_file = os.path.join(task_results_dir, f"{file_name.split('.java')[0]}.txt")
-    
-    with open(result_file, 'w') as f:
-        f.write(f"Test Results for {file_name}\n")
-        f.write("=" * (16 + len(file_name)) + "\n\n")
-        f.write(f"Timestamp: {test_result.timestamp}\n")
-        f.write(f"Status: {test_result.status}\n")
-        if test_result.coverage:
-            f.write("\nCoverage Metrics:\n")
-            f.write("-----------------\n")
-            f.write(f"Line Coverage: {test_result.coverage.line_coverage:.2f}%\n")
-            f.write(f"Branch Coverage: {test_result.coverage.branch_coverage:.2f}%\n")
-            f.write(f"Instruction Coverage: {test_result.coverage.instruction_coverage:.2f}%\n")
-        f.write("\nTest Output:\n")
-        f.write("-----------\n")
-        f.write(test_result.output)
-        if test_result.error:
-            f.write("\nErrors:\n")
-            f.write("-------\n")
-            f.write(str(test_result.error))
-
-def save_summary(test_results, task_id):
-    """Save summary of all test results"""
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    task_results_dir = os.path.join(script_dir, BASE_DIR, task_id, RESULTS_DIR)
+def save_task_summary(test_results, task_id, base_path):
+    """Save summary for a single task"""
+    task_results_dir = os.path.join(base_path, task_id, RESULTS_DIR)
     os.makedirs(task_results_dir, exist_ok=True)
     summary_file = os.path.join(task_results_dir, "summary.txt")
     
-    def is_letter_file(filename):
-        return bool(re.match(r'^[A-Za-z]\.java$', filename))
-    
-    def categorize_results(results):
-        claude_tests = []
-        llama_tests = []
-        other_tests = []
-        
-        for result in results:
-            file_name = os.path.basename(result.file_name)
-            if is_letter_file(file_name):
-                first_letter = file_name[0].upper()
-                if 'A' <= first_letter <= 'E':
-                    claude_tests.append(result)
-                elif 'F' <= first_letter <= 'J':
-                    llama_tests.append(result)
-            else:
-                other_tests.append(result)
-        
-        return claude_tests, llama_tests, other_tests
-    
-    def calculate_stats(tests):
-        if not tests:
-            return 0, 0, 0, 0, 0
-        
-        total = len(tests)
-        passed = sum(1 for r in tests if r.status == "PASSED")
-        failed = sum(1 for r in tests if r.status == "FAILED")
-        failed_to_run = sum(1 for r in tests if r.status == "FAILED_TO_RUN")
-        
-        pass_percent = (passed / total) * 100 if total > 0 else 0
-        fail_percent = ((failed + failed_to_run) / total) * 100 if total > 0 else 0
-        
-        return total, passed, failed + failed_to_run, pass_percent, fail_percent
-    
-    claude_tests, llama_tests, other_tests = categorize_results(test_results)
-    
     with open(summary_file, 'w') as f:
-        f.write("Test Execution Summary\n")
-        f.write("=====================\n\n")
+        f.write(f"Test Results Summary for Task {task_id}\n")
+        f.write("=" * (30 + len(task_id)) + "\n\n")
         f.write(f"Generated: {datetime.now()}\n\n")
         
         # Overall statistics
@@ -476,132 +364,143 @@ def save_summary(test_results, task_id):
         f.write(f"Passed: {passed}\n")
         f.write(f"Failed: {failed}\n")
         f.write(f"Failed to Run: {failed_to_run}\n")
-        f.write(f"Pass Rate: {(passed/total*100):.2f}%\n\n")
-        
-        # Model comparison
-        f.write("Model Comparison:\n")
-        f.write("----------------\n")
-        
-        # Claude results
-        c_total, c_passed, c_failed, c_pass_pct, c_fail_pct = calculate_stats(claude_tests)
-        f.write("\nClaude Model (A-E):\n")
-        f.write(f"Total tests: {c_total}\n")
-        f.write(f"Passed: {c_passed}\n")
-        f.write(f"Failed/Failed to Run: {c_failed}\n")
-        f.write(f"Pass Rate: {c_pass_pct:.2f}%\n")
-        
-        # Llama results
-        l_total, l_passed, l_failed, l_pass_pct, l_fail_pct = calculate_stats(llama_tests)
-        f.write("\nLlama Model (F-J):\n")
-        f.write(f"Total tests: {l_total}\n")
-        f.write(f"Passed: {l_passed}\n")
-        f.write(f"Failed/Failed to Run: {l_failed}\n")
-        f.write(f"Pass Rate: {l_pass_pct:.2f}%\n")
-        
-        # Other results (base, solution, incorrect)
-        o_total, o_passed, o_failed, o_pass_pct, o_fail_pct = calculate_stats(other_tests)
-        if other_tests:
-            f.write("\nOther Files:\n")
-            f.write(f"Total tests: {o_total}\n")
-            f.write(f"Passed: {o_passed}\n")
-            f.write(f"Failed/Failed to Run: {o_failed}\n")
-            f.write(f"Pass Rate: {o_pass_pct:.2f}%\n")
+        f.write(f"Pass Rate: {(passed/total*100):.2f}%\n\n" if total > 0 else "Pass Rate: N/A\n\n")
         
         # Detailed results
-        f.write("\nDetailed Results:\n")
+        f.write("Detailed Results:\n")
         f.write("----------------\n")
-        for result in test_results:
-            status_icon = "✅" if result.status == "PASSED" else "❌"
-            f.write(f"{status_icon} {os.path.basename(result.file_name)}: {result.status}\n")
+        if total == 0:
+            f.write("No tests were run for this task.\n")
+        else:
+            for result in test_results:
+                status_icon = "✅" if result.status == "PASSED" else "❌"
+                f.write(f"{status_icon} {result.file_name}: {result.status}\n")
+                if result.error:
+                    f.write(f"   Error: {result.error}\n")
 
-def create_build_gradle():
-    gradle_content = """plugins {
-    id 'java'
-    id 'jacoco'
-}
-
-repositories {
-    mavenCentral()
-}
-
-dependencies {
-    implementation 'org.thymeleaf:thymeleaf:3.1.1.RELEASE'
-    implementation 'org.junit.jupiter:junit-jupiter-engine:5.9.2'
-}
-
-test {
-    useJUnitPlatform()
-    finalizedBy jacocoTestReport
-
-    testLogging {
-        events 'passed', 'skipped', 'failed'
-        showExceptions true
-        showCauses true
-        showStackTraces true
-        exceptionFormat = 'full'
-    }
-}
-
-jacocoTestReport {
-    reports {
-        csv.required = true
-        html.required = true
-    }
-}                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       
-"""
-    with open(BUILD_GRADLE_FILE, "w") as f:
-        f.write(gradle_content)
-
-def run_gradle(capture_output=True):
-    subprocess.run(["gradle", "wrapper"], check=True, capture_output=capture_output)
-    try:
-        result = subprocess.run(["./gradlew", "test", "jacocoTestReport"], 
-                              capture_output=capture_output, 
-                              text=True,
-                              timeout=30)  # 30 second timeout
-        return result
-    except subprocess.TimeoutExpired:
-        print(f"{Colors.YELLOW}Test execution timed out after 30 seconds{Colors.NC}")
-        return subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="Test timed out")
+def save_global_summary(base_path, all_results):
+    """Save a global summary of all tasks"""
+    summary_file = os.path.join(base_path, "summary.txt")
+    
+    with open(summary_file, 'w') as f:
+        f.write("Global Test Execution Summary\n")
+        f.write("===========================\n\n")
+        f.write(f"Generated: {datetime.now()}\n\n")
+        
+        # Overall statistics across all tasks
+        total_tasks = len(all_results)
+        total_tests = sum(len(results) for results in all_results.values())
+        total_passed = sum(sum(1 for r in results if r.status == "PASSED") 
+                         for results in all_results.values())
+        
+        f.write("Overall Statistics:\n")
+        f.write("-----------------\n")
+        f.write(f"Total tasks processed: {total_tasks}\n")
+        f.write(f"Total tests run: {total_tests}\n")
+        f.write(f"Total tests passed: {total_passed}\n")
+        f.write(f"Overall pass rate: {(total_passed/total_tests*100):.2f}%\n\n" if total_tests > 0 else "Overall pass rate: N/A\n\n")
+        
+        # Model comparison statistics
+        claude_passed = 0
+        claude_total = 0
+        llama_passed = 0
+        llama_total = 0
+        
+        for results in all_results.values():
+            for result in results:
+                if result.file_name.upper() in ['A.JAVA', 'B.JAVA', 'C.JAVA', 'D.JAVA', 'E.JAVA']:
+                    claude_total += 1
+                    if result.status == "PASSED":
+                        claude_passed += 1
+                elif result.file_name.upper() in ['F.JAVA', 'G.JAVA', 'H.JAVA', 'I.JAVA', 'J.JAVA']:
+                    llama_total += 1
+                    if result.status == "PASSED":
+                        llama_passed += 1
+        
+        f.write("Model Performance:\n")
+        f.write("-----------------\n")
+        if claude_total > 0:
+            f.write(f"Claude (A-E):\n")
+            f.write(f"  Tests run: {claude_total}\n")
+            f.write(f"  Tests passed: {claude_passed}\n")
+            f.write(f"  Pass rate: {(claude_passed/claude_total*100):.2f}%\n\n")
+        else:
+            f.write("Claude (A-E): No tests run\n\n")
+        
+        if llama_total > 0:
+            f.write(f"Llama (F-J):\n")
+            f.write(f"  Tests run: {llama_total}\n")
+            f.write(f"  Tests passed: {llama_passed}\n")
+            f.write(f"  Pass rate: {(llama_passed/llama_total*100):.2f}%\n\n")
+        else:
+            f.write("Llama (F-J): No tests run\n\n")
+        
+        # Per-task breakdown
+        f.write("Task-by-Task Breakdown:\n")
+        f.write("---------------------\n")
+        for task_id, results in sorted(all_results.items()):
+            passed = sum(1 for r in results if r.status == "PASSED")
+            total = len(results)
+            f.write(f"\nTask {task_id}:\n")
+            f.write(f"  Tests run: {total}\n")
+            f.write(f"  Tests passed: {passed}\n")
+            f.write(f"  Pass rate: {(passed/total*100):.2f}%\n" if total > 0 else "  Pass rate: N/A\n")
+            
+            # Detailed results for this task
+            if total == 0:
+                f.write("  No tests were run for this task.\n")
+            else:
+                f.write("  Detailed results:\n")
+                for result in results:
+                    status_icon = "✅" if result.status == "PASSED" else "❌"
+                    f.write(f"    {status_icon} {result.file_name}: {result.status}\n")
+                    if result.error:
+                        f.write(f"      Error: {result.error}\n")
 
 def main():
-    # Declare global at the start of the function
-    global RESULTS_DIR, BASE_DIR
+    if len(sys.argv) != 2:
+        print(f"{Colors.RED}Usage: python {sys.argv[0]} <base_path>{Colors.NC}")
+        print("Example: python run_tests.py tasks/java_tasks")
+        return
+
+    base_path = sys.argv[1]
+    if not os.path.exists(base_path):
+        print(f"{Colors.RED}Base path '{base_path}' not found{Colors.NC}")
+        return
+
+    print(f"{Colors.GREEN}Starting Java code testing for all tasks in {base_path}...{Colors.NC}")
+
+    # Get all task directories
+    task_dirs = get_task_directories(base_path)
+    all_results = {}
+
+    # Create work directory
+    work_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "work_dir")
+    if os.path.exists(work_dir):
+        shutil.rmtree(work_dir)
+    os.makedirs(work_dir)
+    original_dir = os.getcwd()
+    os.chdir(work_dir)
+
+    try:
+        for task_id in task_dirs:
+            print(f"\n{Colors.BLUE}Processing task {task_id}...{Colors.NC}")
+            test_results = process_task(task_id, base_path)
+            all_results[task_id] = test_results
+            
+            # Save individual task summary and coverage
+            save_task_summary(test_results, task_id, base_path)
+            save_coverage_report(test_results, task_id, base_path)
+
+        # Save global summary
+        save_global_summary(base_path, all_results)
+
+        print(f"{Colors.GREEN}All tasks completed. Global summary saved in {base_path}/summary.txt{Colors.NC}")
     
-    if len(sys.argv) not in [2, 3]:
-        print(f"{Colors.RED}Usage: python {sys.argv[0]} <task_id> [base_path]{Colors.NC}")
-        print("Example: python run_tests.py 304027")
-        print("Example with base path: python run_tests.py 304027 /path/to/tasks")
-        return
+    finally:
+        # Change back to original directory and clean up
+        os.chdir(original_dir)
+        delete_work_dir()
 
-    task_id = sys.argv[1]
-    if not re.match(r'^\d{6}$', task_id):
-        print(f"{Colors.RED}Invalid task ID format. Must be a 6-digit number.{Colors.NC}")
-        return
-
-    # Override BASE_DIR if path is provided
-    if len(sys.argv) == 3:
-        BASE_DIR = sys.argv[2]
-        print(f"{Colors.BLUE}Using custom base directory: {BASE_DIR}{Colors.NC}")
-
-    print(f"{Colors.GREEN}Starting Java code testing for task {task_id}...{Colors.NC}")
-
-    # Set task-specific results directory
-    RESULTS_DIR = "test_results"
-
-    # Set up the task directory structure
-    if not setup_task_directory(task_id):
-        return
-
-    # Run tests and get results
-    test_results = run_tests(task_id)
-    
-    # Save summary and coverage report
-    save_summary(test_results, task_id)
-    save_coverage_report(test_results, task_id)
-
-    print(f"{Colors.GREEN}All tests completed. Results and coverage report saved in {RESULTS_DIR} directory.{Colors.NC}")
-     # Delete work_dir at the end
-    delete_work_dir()
 if __name__ == "__main__":
     main()
