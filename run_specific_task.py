@@ -273,7 +273,11 @@ def save_summary(test_results, task_id):
         summary_file = os.path.join(task_results_dir, "summary.txt")
 
         def is_letter_file(filename):
-            return bool(re.match(r'^[A-Za-z]\.java$', filename))
+            # Update regex to match modelX.java files and map them to their letter
+            if re.match(r'^model(\d+)\.java$', filename):
+                model_num = int(re.match(r'^model(\d+)\.java$', filename).group(1))
+                return chr(64 + model_num) + '.java'  # Convert 1->A, 2->B, etc.
+            return filename
 
         def categorize_results(results):
             claude_tests = []
@@ -282,8 +286,10 @@ def save_summary(test_results, task_id):
 
             for result in results:
                 file_name = os.path.basename(result.file_name)
-                if is_letter_file(file_name):
-                    first_letter = file_name[0].upper()
+                letter_file = is_letter_file(file_name)
+                
+                if re.match(r'^[A-J]\.java$', letter_file):
+                    first_letter = letter_file[0].upper()
                     if 'A' <= first_letter <= 'E':
                         claude_tests.append(result)
                     elif 'F' <= first_letter <= 'J':

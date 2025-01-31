@@ -684,6 +684,74 @@ def process_task(task_id, solution_only=False):
         logging.error(f"Task {task_id}: Failed to process task: {str(e)}")
         return None
 
+def create_overall_summary(base_dir):
+    """Create an overall summary of all tasks processed"""
+    try:
+        total_tasks = 0
+        total_files = 0
+        total_passed = 0
+        total_failed = 0
+        total_failed_to_run = 0
+        failed_task_ids = []
+        
+        # Process each task directory
+        for task_dir in os.listdir(base_dir):
+            if not re.match(r'^\d{6}$', task_dir):
+                continue
+                
+            results_dir = os.path.join(base_dir, task_dir, RESULTS_DIR)
+            if not os.path.exists(results_dir):
+                continue
+                
+            total_tasks += 1
+            summary_file = os.path.join(results_dir, "summary.txt")
+            
+            if os.path.exists(summary_file):
+                with open(summary_file, 'r') as f:
+                    content = f.read()
+                    
+                    # Extract basic stats
+                    if match := re.search(r'Total files tested: (\d+)', content):
+                        total_files += int(match.group(1))
+                    if match := re.search(r'Passed: (\d+)', content):
+                        passed = int(match.group(1))
+                        total_passed += passed
+                    if match := re.search(r'Failed: (\d+)', content):
+                        failed = int(match.group(1))
+                        total_failed += failed
+                        if failed > 0:
+                            failed_task_ids.append(task_dir)
+                    if match := re.search(r'Failed to Run: (\d+)', content):
+                        failed_to_run = int(match.group(1))
+                        total_failed_to_run += failed_to_run
+                        if failed_to_run > 0:
+                            failed_task_ids.append(task_dir)
+        
+        # Create overall summary
+        with open('overall_summary.txt', 'w') as f:
+            f.write("Overall Test Execution Summary\n")
+            f.write("===========================\n\n")
+            f.write(f"Generated: {datetime.now()}\n\n")
+            
+            f.write("General Statistics:\n")
+            f.write("-----------------\n")
+            f.write(f"Total tasks processed: {total_tasks}\n")
+            f.write(f"Total files tested: {total_files}\n")
+            f.write(f"Total passed: {total_passed}\n")
+            f.write(f"Total failed: {total_failed}\n")
+            f.write(f"Total failed to run: {total_failed_to_run}\n")
+            f.write(f"Overall pass rate: {(total_passed/total_files*100):.2f}%\n\n")
+            
+            if failed_task_ids:
+                f.write("Failed Tasks:\n")
+                f.write("------------\n")
+                for task_id in sorted(failed_task_ids):
+                    f.write(f"- {task_id}\n")
+            
+        logging.info("Created overall summary file: overall_summary.txt")
+    except Exception as e:
+        logging.exception("Error creating overall summary: %s", str(e))
+
 def main():
     try:
         gradle_bin = os.path.join(script_dir, GRADLE_DIR, "bin", "gradle")
@@ -764,6 +832,9 @@ def main():
                 if batch_end < total_tasks:
                     time.sleep(1)
 
+        # After all tasks are processed, create overall summary
+        create_overall_summary(BASE_DIR)
+        
         # Clean up work directories at the end
         delete_work_dir()
         logging.info("All tasks completed!")
