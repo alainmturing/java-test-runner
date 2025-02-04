@@ -6,10 +6,12 @@ The test runner requires a specific directory structure:
 .
 ├── code/ # Directory containing Java files to test
 │ ├── A.java # Single-letter solution files (A-J)
-│ ├── base.java # Other solution files
+│ ├── base.java
+│ ├── solution.java
+│ ├── incorrect.java
 │ └── ...
 ├── test/ # Directory containing test files
-│ └── MainTest.java
+│ └── SolutionTest.java
 └── test_results/ # Generated automatically
     ├── summary.txt # Overall test results
     ├── coverage.txt # Code coverage report
@@ -17,15 +19,15 @@ The test runner requires a specific directory structure:
 ```
 
 ## Test File Requirements
-1. The test file must be named exactly `MainTest.java`
-2. The test class must be declared as `public class MainTest`
+1. The test file must be named exactly `SolutionTest.java`
+2. The test class must be declared as `public class SolutionTest`
 3. Place the test file in the `test/` directory
 4. Use JUnit Jupiter (JUnit 5) annotations for tests
 
 ## Code File Requirements
 1. Place all Java files to be tested in the `code/` directory
-2. Each file should contain exactly one public class
-3. The script will automatically rename the public class to `Main` during testing
+2. Each file should contain exactly one public class. If your code has multiple classes, there should be one top level public class, at most 1.
+3. The script will automatically rename the public class to `Solution` during testing
 
 ## Prerequisites
 - Python 3.6 or higher
@@ -53,24 +55,36 @@ def create_build_gradle():
 
 repositories {
     mavenCentral()
-    // Add additional repositories if needed, e.g.:
-    // maven { url 'https://jitpack.io' }
 }
 
 dependencies {
-    // Existing dependencies
     implementation 'com.fasterxml.jackson.core:jackson-databind:2.15.2'
     implementation 'org.json:json:20230227'
     implementation 'org.jsoup:jsoup:1.18.3'
-    
-    // Add your custom dependencies here, for example:
-    implementation 'org.apache.commons:commons-lang3:3.12.0'
-    implementation 'com.google.guava:guava:31.1-jre'
-    
-    // For test dependencies, use testImplementation:
+
     testImplementation 'org.junit.jupiter:junit-jupiter-api:5.9.2'
     testImplementation 'org.mockito:mockito-junit-jupiter:5.15.2'
     testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.9.2'
+}
+
+test {
+    useJUnitPlatform()
+    finalizedBy jacocoTestReport
+
+    testLogging {
+        events 'passed', 'skipped', 'failed'
+        showExceptions true
+        showCauses true
+        showStackTraces true
+        exceptionFormat = 'full'
+    }
+}
+
+jacocoTestReport {
+    reports {
+        csv.required = true
+        html.required = true
+    }
 }
 """
 ```
@@ -83,9 +97,51 @@ Dependency formats:
 
 You can find the correct dependency notation for most libraries on [Maven Central](https://mvnrepository.com/).
 
+## Installed Packages Field
+
+For the installed packages field on a task form, you are to fill it in with the gradle content you used for your task and include only the dependencies needed for that task. For example, if a task doesn't have any dependencies then it would just need junit, so it would look as follows:
+
+```
+plugins {
+    id 'java'
+    id 'jacoco'
+}
+
+repositories {
+    mavenCentral()
+    // Add additional repositories if needed, e.g.:
+    // maven { url 'https://jitpack.io' }
+}
+
+dependencies {
+    testImplementation 'org.junit.jupiter:junit-jupiter-api:5.9.2'
+    testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.9.2'
+}
+
+test {
+    useJUnitPlatform()
+    finalizedBy jacocoTestReport
+
+    testLogging {
+        events 'passed', 'skipped', 'failed'
+        showExceptions true
+        showCauses true
+        showStackTraces true
+        exceptionFormat = 'full'
+    }
+}
+
+jacocoTestReport {
+    reports {
+        csv.required = true
+        html.required = true
+    }
+}
+```
+
 ## Usage
 1. Place your code files in the `code/` directory
-2. Place `MainTest.java` in the `test/` directory
+2. Place `SolutionTest.java` in the `test/` directory
 3. Run the script:
 ```bash
 python run_tests.py
@@ -115,7 +171,7 @@ Coverage data is collected using JaCoCo and is generated automatically for each 
 
 ## Common Issues
 - Ensure your code files contain only one public class
-- Verify `MainTest.java` is properly named and contains `public class MainTest`
+- Verify `SolutionTest.java` is properly named and contains `public class SolutionTest`
 - Check that Java and Python are properly installed and accessible from the command line
 - Make sure you have write permissions in the directory
 - If adding new dependencies, verify they are compatible with your JDK version
