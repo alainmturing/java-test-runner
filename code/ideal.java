@@ -6,12 +6,12 @@ import java.util.Random;
  * A utility class for performing various image processing tasks such as resizing, cropping, rotating, 
  * and applying color adjustments.
  */
-public class Main {
+public class Solution {
 
     /**
      * Default constructor for ImageProcessor.
      */
-    public Main() {
+    public Solution() {
     }
 
     /**

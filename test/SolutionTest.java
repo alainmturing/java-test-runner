@@ -4,9 +4,9 @@ import java.awt.image.BufferedImage;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-public class MainTest {
+public class SolutionTest {
 
-    private final Main imageProcessor = new Main();
+    private final Solution imageProcessor = new Solution();
 
     @Test
     void testResizeImage_positiveCase() {
