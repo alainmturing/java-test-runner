@@ -396,7 +396,7 @@ def run_gradle(work_dir, capture_output=True):
             "--no-daemon",
             "--project-cache-dir", os.path.join(work_dir, ".gradle"),
             "--gradle-user-home", os.path.join(work_dir, ".gradle")
-        ], capture_output=capture_output, text=True, cwd=work_dir, env=env, timeout=60)
+        ], capture_output=capture_output, text=True, cwd=work_dir, env=env, timeout=240)
         
         return result
     except Exception as e:
@@ -717,9 +717,9 @@ def main():
         logging.info(f"Using base directory: {BASE_DIR}")
         logging.info(f"Processing task ID: {task_id}")
 
-        # Validate task_id format (assuming it's a 6-digit number)
-        if not re.match(r'^\d{6}$', task_id):
-            logging.error("Invalid task_id format. It should be a 6-digit number.")
+        # Validate task_id format (assuming it's a number)
+        if not re.match(r'^\d+$', task_id):
+            logging.error("Invalid task_id format. It should be a number.")
             return
 
         # Process the specified task

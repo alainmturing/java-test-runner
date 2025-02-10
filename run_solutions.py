@@ -397,7 +397,7 @@ def run_gradle(work_dir, capture_output=True):
             "--no-daemon",
             "--project-cache-dir", os.path.join(work_dir, ".gradle"),
             "--gradle-user-home", os.path.join(work_dir, ".gradle")
-        ], capture_output=capture_output, text=True, cwd=work_dir, env=env, timeout=60)
+        ], capture_output=capture_output, text=True, cwd=work_dir, env=env, timeout=240)
         
         return result
     except Exception as e:
