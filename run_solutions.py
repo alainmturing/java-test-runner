@@ -443,7 +443,8 @@ def create_build_gradle(task_id, work_dir):
         # Default dependencies block with JUnit dependencies
         default_junit_deps = [
             "testImplementation 'org.junit.jupiter:junit-jupiter-engine:5.9.2'",
-            "testImplementation 'org.junit.jupiter:junit-jupiter-api:5.9.2'"
+            "testImplementation 'org.junit.jupiter:junit-jupiter-api:5.9.2'",
+            "testImplementation 'org.junit.jupiter:junit-jupiter-params:5.10.1'"
         ]
 
         # Construct path to installed_packages.txt
@@ -486,8 +487,6 @@ def create_build_gradle(task_id, work_dir):
                         if 'mockito' in dep.lower() or not any(junit_str in dep.lower() for junit_str in ['junit', 'jupiter']):
                             final_deps.append(dep)
                 
-                logging.info(f"Using dependencies from {packages_file} with preserved JUnit deps and removed M2.1")
-
         # Create final dependencies block
         dependencies_block = "dependencies {\n    " + "\n    ".join(final_deps) + "\n}"
         
