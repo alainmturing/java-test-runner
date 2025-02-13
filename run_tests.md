@@ -31,7 +31,7 @@ The test runner requires a specific directory structure:
 
 ## Prerequisites
 - Python 3.6 or higher
-- Java Development Kit (JDK) 11 or higher
+- Java Development Kit (JDK) 21
 - Gradle (will be automatically downloaded by the wrapper)
 
 ## Installation
