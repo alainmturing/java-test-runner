@@ -136,7 +136,7 @@ def delete_work_dir():
     logging.info("Deleting work directories in all task folders...")
     try:
         for task_dir in os.listdir(BASE_DIR):
-            if re.match(r'^\d{6}$', task_dir):
+            if re.match(r'^\d+$', task_dir):
                 work_dir = os.path.join(BASE_DIR, task_dir, "work_dir")
                 if os.path.exists(work_dir):
                     shutil.rmtree(work_dir)
@@ -695,7 +695,7 @@ def create_overall_summary(base_dir):
         
         # Process each task directory
         for task_dir in os.listdir(base_dir):
-            if not re.match(r'^\d{6}$', task_dir):
+            if not re.match(r'^\d+$', task_dir):
                 continue
                 
             results_dir = os.path.join(base_dir, task_dir, RESULTS_DIR)
@@ -776,11 +776,11 @@ def main():
         if solution_only:
             logging.info("Running in solution-only mode")
 
-        # Find all task directories (6-digit numbered directories)
+        # Find all task directories (numbered directories)
         task_dirs = []
         for item in os.listdir(BASE_DIR):
             full_path = os.path.join(BASE_DIR, item)
-            if os.path.isdir(full_path) and re.match(r'^\d{6}$', item):
+            if os.path.isdir(full_path) and re.match(r'^\d+$', item):
                 task_dirs.append(full_path)
 
         if not task_dirs:
